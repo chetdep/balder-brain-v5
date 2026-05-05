@@ -2,43 +2,43 @@ import sys
 import asyncio
 from rich.console import Console
 
-# Đảm bảo in được tiếng Việt trên console Windows
+# Ensure UTF-8 encoding for Windows console
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8')
 
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.prompt import Prompt
-from agent_brain_v3 import BrainV3Agent
+from Core.agent_core import ReActAgent
 
 console = Console()
 
 
 async def run_cli():
-    # Tiêu đề giao diện
+    # UI Title
     console.print(Panel.fit(
         "[bold cyan]🤖 Balder Agent Hub — Text-based ReAct Engine[/]\n"
         "[dim]Powered by Gemma4 IQ3_XS | Local Ollama[/dim]",
         border_style="cyan"
     ))
-    console.print("[dim]Hệ thống đang hoạt động. Gõ 'exit' để thoát.[/dim]\n")
+    console.print("[dim]System is active. Type 'exit' to quit.[/dim]\n")
 
-    # Khởi tạo Agent
-    agent = BrainV3Agent(verbose=True)
+    # Initialize Agent
+    agent = ReActAgent(verbose=True)
 
     while True:
         try:
-            # Lấy lệnh từ người dùng
-            user_input = Prompt.ask("\n[bold green]User (Giao lệnh)[/bold green]")
+            # Get command from user
+            user_input = Prompt.ask("\n[bold green]User (Command)[/bold green]")
             if user_input.lower() in ['exit', 'quit']:
-                console.print("[yellow]Bắt đầu đóng hệ thống... Tạm biệt![/]")
+                console.print("[yellow]Shutting down system... Goodbye![/]")
                 break
 
             agent.add_user_message(user_input)
 
-            # Khởi chạy ReAct loop
+            # Start ReAct loop
             with console.status(
-                "[bold yellow]Agent đang suy nghĩ và hành động... (Ctrl+C để dừng)",
+                "[bold yellow]Agent is thinking and acting... (Ctrl+C to stop)",
                 spinner="dots"
             ):
                 while True:
@@ -90,26 +90,26 @@ async def run_cli():
 
                         elif result["type"] == "cancelled":
                             console.print(
-                                "[red]Hành động đã bị hủy bởi người dùng.[/]"
+                                "[red]Action cancelled by user.[/]"
                             )
                             break
 
                         elif result["type"] == "error":
                             console.print(Panel(
-                                f"[bold red]Lỗi hệ thống:[/] {result['content']}",
+                                f"[bold red]System Error:[/] {result['content']}",
                                 border_style="red"
                             ))
                             break
 
                     except asyncio.CancelledError:
-                        console.print("[red]Đã ngắt quá trình suy nghĩ.[/]")
+                        console.print("[red]Thinking process interrupted.[/]")
                         break
 
         except KeyboardInterrupt:
-            console.print("\n[yellow]Hành động bị ngắt (Ctrl+C).[/]")
+            console.print("\n[yellow]Action interrupted (Ctrl+C).[/]")
             continue
         except Exception as e:
-            console.print(f"[red]Lỗi không mong muốn: {e}[/]")
+            console.print(f"[red]Unexpected error: {e}[/]")
             break
 
 

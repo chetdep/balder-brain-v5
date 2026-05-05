@@ -4,7 +4,7 @@ import subprocess
 from Core.safety import SafetyGate
 
 def create_outcome(status: str, reason: str, retryable: bool = False, artifacts: list = None):
-    """Tạo HandlerOutcome chuẩn JARVIS."""
+    """Create a standard JARVIS HandlerOutcome."""
     return json.dumps({
         "status": status,
         "reason": reason,
@@ -19,7 +19,7 @@ def execute_command(command: str):
         return create_outcome("blocked", msg)
         
     try:
-        # Giả lập hoặc thực thi thật tùy môi trường
+        # Simulate or execute for real depending on environment
         result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
             return create_outcome("handled", result.stdout)
@@ -29,23 +29,23 @@ def execute_command(command: str):
         return create_outcome("fatal", str(e))
 
 def read_file(filepath: str):
-    """Đọc file an toàn."""
+    """Safe file reading."""
     try:
         if not os.path.exists(filepath):
-            return create_outcome("retryable_miss", "File không tồn tại.")
+            return create_outcome("retryable_miss", "File does not exist.")
         with open(filepath, 'r', encoding='utf-8') as f:
             return create_outcome("handled", f.read())
     except Exception as e:
         return create_outcome("fatal", str(e))
 
 def create_file(filepath: str = None, content: str = None, TargetFile: str = None, CodeContent: str = None, **kwargs):
-    """Tạo file mới hoặc ghi đè file cũ (Hỗ trợ cả chuẩn JARVIS và chuẩn Coder Agent)."""
+    """Create a new file or overwrite an existing one (Supports JARVIS and Coder Agent standards)."""
     try:
         final_path = filepath or TargetFile
         final_content = content or CodeContent
         
         if not final_path:
-            return create_outcome("fatal", "Thiếu đường dẫn file (filepath hoặc TargetFile).")
+            return create_outcome("fatal", "Missing file path (filepath or TargetFile).")
             
         dir_path = os.path.dirname(final_path)
         if dir_path:
@@ -53,22 +53,22 @@ def create_file(filepath: str = None, content: str = None, TargetFile: str = Non
             
         with open(final_path, 'w', encoding='utf-8') as f:
             f.write(final_content or "")
-        return create_outcome("handled", f"Đã tạo file {final_path}", artifacts=[final_path])
+        return create_outcome("handled", f"Created file {final_path}", artifacts=[final_path])
     except Exception as e:
         return create_outcome("fatal", str(e))
 
 def list_directory(path: str = "."):
-    """Liệt kê thư mục."""
+    """List directory contents."""
     try:
         items = os.listdir(path)
-        return create_outcome("handled", f"Danh sách: {items}")
+        return create_outcome("handled", f"List: {items}")
     except Exception as e:
         return create_outcome("fatal", str(e))
 
 def filesystem_delete(path: str, recursive: bool = False, reason: str = ""):
     """Layer 3: Safety Wrapper cho deletions."""
     result_msg = SafetyGate.filesystem_delete(path, recursive, reason)
-    if "Thành công" in result_msg:
+    if "Success" in result_msg:
         return create_outcome("handled", result_msg)
     else:
         return create_outcome("blocked", result_msg)

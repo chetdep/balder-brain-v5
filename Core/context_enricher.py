@@ -1,30 +1,30 @@
 """
 ==========================================================================
-CONTEXT ENRICHER — Module bổ sung ngữ cảnh cho LLM
+CONTEXT ENRICHER — Context Augmentation Module for LLMs
 ==========================================================================
-Mục đích:
-  Giải quyết vấn đề LLM (đặc biệt model quantize thấp) không hiểu được
-  câu hỏi ngắn, mơ hồ, thiếu ngữ cảnh.
+Purpose:
+  Solves the problem of LLMs (especially low-quantized models) failing 
+  to understand short, ambiguous, or context-lacking queries.
 
-Kiến trúc: 3 TẦNG LỌC
+Architecture: 3-TIER FILTERING
 
-  Tầng 1: Intent Classifier (Local, rule-based)
-    → Phân loại nhanh ý định: action / question / debug / context_switch
-    → Không cần gọi LLM, xử lý bằng regex + keyword matching
+  Tier 1: Intent Classifier (Local, rule-based)
+    → Quickly classifies intent: action / question / debug / context_switch
+    → No LLM call required; processed via regex + keyword matching
 
-  Tầng 2: Context Window Manager
-    → Quản lý sliding window của conversation history
-    → Tự động detect context switch ("à mà thôi", "quên cái trên đi")
-    → Inject relevant context vào prompt
+  Tier 2: Context Window Manager
+    → Manages sliding window of conversation history
+    → Automatically detects context switches ("nevermind", "forget the above")
+    → Injects relevant context into the prompt
 
-  Tầng 3: Prompt Enricher
-    → Biến câu hỏi ngắn/mơ hồ thành prompt đầy đủ cho LLM
-    → Thêm metadata: intent, context, constraints
+  Tier 3: Prompt Enricher
+    → Transforms short/ambiguous queries into full context prompts
+    → Adds metadata: intent, context, constraints
 
-Tích hợp vào agent_core.py:
+Integration into agent_core.py:
   user_input → ContextEnricher.enrich() → enriched_prompt → LLM
 
-Chạy test: python context_enricher.py
+Test command: python context_enricher.py
 ==========================================================================
 """
 
@@ -37,25 +37,25 @@ from enum import Enum
 
 
 # ============================================================================
-# TẦNG 1: INTENT CLASSIFIER (Rule-based, không cần LLM)
+# TIER 1: INTENT CLASSIFIER (Rule-based, no LLM required)
 # ============================================================================
 
 class IntentType(Enum):
-    """Phân loại ý định người dùng."""
-    ACTION = "action"              # Yêu cầu thực hiện hành động (tạo, chạy, deploy...)
-    QUESTION = "question"          # Hỏi thông tin / kiến thức
-    DEBUG = "debug"                # Debug / sửa lỗi
-    STATUS_CHECK = "status_check"  # Kiểm tra trạng thái
-    CONTEXT_SWITCH = "context_switch"  # Chuyển đề tài
-    CONFIRMATION = "confirmation"  # Xác nhận / đồng ý
-    AMBIGUOUS = "ambiguous"        # Không xác định được
-    MULTI_ACTION = "multi_action"  # Chuỗi hành động phức tạp
+    """Classification of user intent."""
+    ACTION = "action"              # Request to perform an action (create, run, deploy...)
+    QUESTION = "question"          # Ask for information / knowledge
+    DEBUG = "debug"                # Debug / fix errors
+    STATUS_CHECK = "status_check"  # Check system/task status
+    CONTEXT_SWITCH = "context_switch"  # Change topic
+    CONFIRMATION = "confirmation"  # Confirm / agree
+    AMBIGUOUS = "ambiguous"        # Undetermined/vague
+    MULTI_ACTION = "multi_action"  # Complex action sequence
 
 
 
 @dataclass
 class ActionStep:
-    """Biểu diễn một bước trong chuỗi hành động."""
+    """Represents a single step in an action sequence."""
     step_id: int
     action: str
     target: Optional[str] = None
@@ -64,18 +64,18 @@ class ActionStep:
 
 @dataclass
 class ActionPipeline:
-    """Chuỗi các hành động cần thực hiện."""
+    """A sequence of actions to be executed."""
     steps: List[ActionStep] = field(default_factory=list)
     total_steps: int = 0
     is_conditional: bool = False
 
 @dataclass
 class IntentAnalysis:
-    """Kết quả phân tích ý định (Phân tầng theo JAVIS)."""
+    """Intent analysis results (JAVIS Hierarchical)."""
     primary_intent: IntentType
-    intent_class: str              # Tầng 1: talk / action / workflow / status / debug
-    capability_group: str          # Tầng 2: office.email, web.search, etc.
-    endpoint: Optional[str]        # Tầng 3: email.send, web.news, etc.
+    intent_class: str              # Tier 1: talk / action / workflow / status / debug
+    capability_group: str          # Tier 2: office.email, web.search, etc.
+    endpoint: Optional[str]        # Tier 3: email.send, web.news, etc.
     confidence: float              # 0.0 → 1.0
     detected_actions: List[str]    
     detected_targets: List[str]    
@@ -136,11 +136,11 @@ class IntentClassifier:
     # Hierarchy mapping rules
     CAPABILITY_MAP = {
         "office.email": [r"\bemail\b", r"\bthư\b", r"\bmail\b", "gmail", "inbox"],
-        "office.drive": ["drive", "lưu trữ", "upload", "download"],
-        "web.search": ["tìm", "tra cứu", "tin tức", "news", "google"],
-        "web.read": ["đọc", "xem", "nội dung", "mở trang"],
-        "desktop.system": ["chạy", "cmd", "powershell", "hệ thống"],
-        "self_model.trace": ["kiến trúc", "module", "nằm ở đâu", "cấu trúc code"],
+        "office.drive": ["drive", "storage", "upload", "download"],
+        "web.search": ["search", "lookup", "news", "google"],
+        "web.read": ["read", "view", "content", "open page"],
+        "desktop.system": ["run", "cmd", "powershell", "system"],
+        "self_model.trace": ["architecture", "module", "where is", "code structure"],
     }
     
     DEBUG_INDICATORS = [
@@ -200,15 +200,15 @@ class IntentClassifier:
     }
 
     def _parse_pipeline(self, text: str, actions: List[str], targets: List[str]) -> Optional[ActionPipeline]:
-        """Phân tích chuỗi hành động từ text."""
+        """Analyze action sequences from text."""
         if len(actions) < 2 and not any(re.search(p, text) for p in self.PIPELINE_CONJUNCTIONS["sequential"] + self.PIPELINE_CONJUNCTIONS["conditional"]):
             return None
             
         steps = []
         is_conditional = False
         
-        # Heuristic phân tách các bước dựa trên keyword "rồi", "sau đó", "nếu"
-        # Chia nhỏ text thành các phần
+        # Heuristic to separate steps based on keywords: "then", "after", "if"
+        # Split text into parts
         delimiters = ["sau đó", "rồi", "tiếp theo", "nếu", "và", "xong thì"]
         pattern = '|'.join(map(re.escape, delimiters))
         parts = re.split(f'({pattern})', text)
@@ -226,14 +226,14 @@ class IntentClassifier:
                     current_condition = "pending" # Sẽ lấy ở part tiếp theo
                 continue
             
-            # Tìm action trong part này
+            # Find action in this part
             step_action = "unknown"
             for act, kws in self.ACTION_KEYWORDS.items():
                 if any(kw in part for kw in kws):
                     step_action = act
                     break
             
-            # Tìm target trong part này
+            # Find target in this part
             step_target = None
             for tgt, kws in self.TARGET_KEYWORDS.items():
                 if any(kw in part for kw in kws):
@@ -260,7 +260,7 @@ class IntentClassifier:
         return None
 
     def classify(self, text: str) -> IntentAnalysis:
-        """Phân loại ý định từ text input."""
+        """Classify intent from text input."""
         text_lower = text.lower().strip()
         
         # 1. Detect context switch
@@ -331,7 +331,7 @@ class IntentClassifier:
             primary = IntentType.STATUS_CHECK
             confidence = 0.85
         elif detected_actions:
-            # Kiểm tra pipeline trước khi gán ACTION đơn thuần
+            # Check for pipeline before assigning simple ACTION
             pipeline = self._parse_pipeline(text_lower, detected_actions, detected_targets)
             if pipeline:
                 primary = IntentType.MULTI_ACTION
@@ -404,7 +404,7 @@ class IntentClassifier:
 
 
 # ============================================================================
-# TẦNG 2: CONTEXT WINDOW MANAGER
+# TIER 2: CONTEXT WINDOW MANAGER
 # ============================================================================
 
 @dataclass
@@ -506,83 +506,83 @@ class ContextWindowManager:
 
 
 # ============================================================================
-# TẦNG 3: PROMPT ENRICHER — Biến câu hỏi mơ hồ → prompt đầy đủ
+# TIER 3: PROMPT ENRICHER — Transforms ambiguous queries → full prompts
 # ============================================================================
 
 class PromptEnricher:
     """
-    Biến câu hỏi ngắn/mơ hồ thành prompt có đầy đủ ngữ cảnh cho LLM.
+    Transforms short/ambiguous queries into prompts with full context for the LLM.
     
-    Luồng xử lý:
-    1. Nhận raw input + IntentAnalysis + context
-    2. Xây dựng enriched prompt với:
+    Processing Flow:
+    1. Receive raw input + IntentAnalysis + context
+    2. Build enriched prompt with:
        - Intent metadata
-       - Relevant context từ history
-       - Hướng dẫn cụ thể cho LLM dựa trên intent type
-       - Constraint / guardrail
+       - Relevant context from history
+       - Specific instructions for the LLM based on intent type
+       - Constraints / guardrails
     """
     
-    # Template cho từng loại intent
+    # Templates for each intent type
     INTENT_TEMPLATES = {
         IntentType.ACTION: (
-            "## YÊU CẦU HÀNH ĐỘNG\n"
-            "User yêu cầu thực hiện hành động.\n"
-            "- Hành động phát hiện: {actions}\n"
-            "- Đối tượng: {targets}\n"
-            "- Mức khẩn cấp: {urgency}\n\n"
-            "HƯỚNG DẪN: Hãy phân tích yêu cầu, lập kế hoạch cụ thể và thực hiện từng bước.\n"
-            "Nếu thiếu thông tin, hãy HỎI LẠI trước khi thực hiện.\n"
+            "## ACTION REQUEST\n"
+            "User requested an action.\n"
+            "- Detected actions: {actions}\n"
+            "- Targets: {targets}\n"
+            "- Urgency: {urgency}\n\n"
+            "INSTRUCTIONS: Analyze the request, create a plan, and execute step-by-step.\n"
+            "If information is missing, ASK before proceeding.\n"
         ),
         IntentType.DEBUG: (
-            "## YÊU CẦU DEBUG / SỬA LỖI\n"
-            "User đang gặp vấn đề và cần hỗ trợ debug.\n\n"
-            "HƯỚNG DẪN:\n"
-            "1. Hỏi hoặc xác định: lỗi gì? ở đâu? error message?\n"
-            "2. Đề xuất các bước chẩn đoán (kiểm tra log, chạy lại, v.v.)\n"
-            "3. Nếu có đủ thông tin → đề xuất fix cụ thể\n"
+            "## DEBUG / FIX REQUEST\n"
+            "User is facing an issue and needs debug support.\n\n"
+            "INSTRUCTIONS:\n"
+            "1. Identify: what error? where? error message?\n"
+            "2. Propose diagnostic steps (check logs, rerun, etc.)\n"
+            "3. If enough info exists → propose a specific fix\n"
         ),
         IntentType.STATUS_CHECK: (
-            "## KIỂM TRA TRẠNG THÁI\n"
-            "User muốn biết trạng thái của một tác vụ.\n\n"
-            "HƯỚNG DẪN: Kiểm tra context gần nhất để xác định user đang hỏi về cái gì.\n"
-            "Nếu không có context → hỏi lại cụ thể.\n"
+            "## STATUS CHECK\n"
+            "User wants to know the status of a task.\n\n"
+            "INSTRUCTIONS: Check the latest context to identify what the user is asking about.\n"
+            "If no context exists → ask for clarification.\n"
         ),
         IntentType.QUESTION: (
-            "## CÂU HỎI THÔNG TIN\n"
-            "User đang hỏi về kiến thức hoặc thông tin.\n\n"
-            "HƯỚNG DẪN: Trả lời chính xác, có cấu trúc, kèm ví dụ nếu có thể.\n"
+            "## INFORMATION QUERY\n"
+            "User is asking for knowledge or information.\n\n"
+            "INSTRUCTIONS: Provide an accurate, structured response with examples if possible.\n"
         ),
         IntentType.CONTEXT_SWITCH: (
-            "## CHUYỂN ĐỀ TÀI\n"
-            "User muốn chuyển sang topic mới. BỎ QUA context cũ.\n\n"
-            "HƯỚNG DẪN: Tập trung 100% vào yêu cầu mới của user.\n"
-            "KHÔNG kéo thông tin từ topic cũ vào.\n"
+            "## CONTEXT SWITCH\n"
+            "User wants to switch to a new topic. IGNORE previous context.\n\n"
+            "INSTRUCTIONS: Focus 100% on the user's new request.\n"
+            "DO NOT pull information from the previous topic.\n"
         ),
         IntentType.AMBIGUOUS: (
-            "## CÂU HỎI MƠ HỒ\n"
-            "Câu hỏi của user không đủ rõ ràng.\n"
-            "- Lý do mơ hồ: {ambiguity_reasons}\n\n"
-            "HƯỚNG DẪN:\n"
-            "1. Liệt kê các cách hiểu có thể\n"
-            "2. Chọn cách hiểu hợp lý nhất dựa trên context (nếu có)\n"
-            "3. Trả lời theo cách hiểu đó, NHƯNG hỏi lại để xác nhận\n"
-            "4. KHÔNG được bịa ra hành động hoặc kết quả\n"
+            "## AMBIGUOUS QUERY\n"
+            "The user's request is not clear enough.\n"
+            "- Ambiguity reasons: {ambiguity_reasons}\n\n"
+            "INSTRUCTIONS:\n"
+            "1. List possible interpretations\n"
+            "2. Select the most likely interpretation based on context (if any)\n"
+            "3. Answer based on that interpretation, BUT ask for confirmation\n"
+            "4. DO NOT invent actions or results\n"
         ),
         IntentType.CONFIRMATION: (
-            "## XÁC NHẬN\n"
-            "User đang xác nhận hoặc đồng ý với đề xuất trước đó.\n\n"
-            "HƯỚNG DẪN: Thực hiện hành động đã được đề xuất trong context.\n"
+            "## CONFIRMATION\n"
+            "User is confirming or agreeing with a previous proposal.\n\n"
+            "INSTRUCTIONS: Execute the action proposed in the context.\n"
         ),
         IntentType.MULTI_ACTION: (
-            "## CHUỖI HÀNH ĐỘNG PHỨC TẠP (PIPELINE)\n"
-            "User yêu cầu một chuỗi các hành động có liên quan đến nhau.\n"
-            "- Tổng số bước: {total_steps}\n"
-            "- Chi tiết pipeline: \n{pipeline_details}\n\n"
-            "HƯỚNG DẪN:\n"
-            "1. Thực hiện TUẦN TỰ các bước đã phân tích.\n"
-            "2. Kiểm tra điều kiện (nếu có) trước mỗi bước.\n"
-            "3. Observation của bước trước phải được dùng để quyết định cho bước sau.\n"
-            "4. Báo cáo tiến độ sau mỗi bước quan trọng.\n"
+            "## COMPLEX ACTION SEQUENCE (PIPELINE)\n"
+            "User requested a series of related actions.\n"
+            "- Total steps: {total_steps}\n"
+            "- Pipeline details: \n{pipeline_details}\n\n"
+            "INSTRUCTIONS:\n"
+            "1. Execute steps SEQUENTIALLY as analyzed.\n"
+            "2. Check conditions (if any) before each step.\n"
+            "3. The observation of the previous step must be used to decide the next step.\n"
+            "4. Report progress after each major step.\n"
         ),
     }
     
@@ -596,11 +596,11 @@ class PromptEnricher:
         extra_context: Optional[Dict] = None
     ) -> Tuple[str, IntentAnalysis]:
         """
-        Chuyển đổi raw input thành enriched prompt.
+        Converts raw input into an enriched prompt.
         
         Args:
-            raw_input: Câu hỏi gốc của user
-            extra_context: Context bổ sung (active file, project info, v.v.)
+            raw_input: User's original query
+            extra_context: Additional context (active file, project info, etc.)
         
         Returns:
             (enriched_prompt, intent_analysis)
@@ -625,7 +625,7 @@ class PromptEnricher:
         return enriched, intent
     
     def record_assistant_response(self, response: str):
-        """Ghi lại response của assistant vào history."""
+        """Record the assistant's response in history."""
         self.context_manager.add_turn("assistant", response)
     
     def _build_enriched_prompt(
@@ -635,7 +635,7 @@ class PromptEnricher:
         history_context: str,
         extra_context: Optional[Dict]
     ) -> str:
-        """Xây dựng prompt enriched từ tất cả thông tin."""
+        """Build an enriched prompt from all information."""
         
         parts = []
         
@@ -656,9 +656,9 @@ class PromptEnricher:
         pipeline_details = ""
         if intent.pipeline:
             for s in intent.pipeline.steps:
-                cond = f" (Điều kiện: {s.condition})" if s.condition else ""
-                dep = f" (Phụ thuộc bước: {s.depends_on})" if s.depends_on else ""
-                pipeline_details += f"  Step {s.step_id}: {s.action} trên {s.target or 'N/A'}{cond}{dep}\n"
+                cond = f" (Condition: {s.condition})" if s.condition else ""
+                dep = f" (Depends on step: {s.depends_on})" if s.depends_on else ""
+                pipeline_details += f"  Step {s.step_id}: {s.action} on {s.target or 'N/A'}{cond}{dep}\n"
 
         template = template.format(
             actions=", ".join(intent.detected_actions) or "không rõ",
@@ -675,37 +675,37 @@ class PromptEnricher:
         if history_context:
             parts.append(history_context)
         
-        # ── Phần 3: Extra context (project, active file, etc.) ──
+        # ── Part 3: Extra context (project, active file, etc.) ──
         if extra_context:
-            ctx_lines = ["## NGỮ CẢNH BỔ SUNG"]
+            ctx_lines = ["## ADDITIONAL CONTEXT"]
             for key, value in extra_context.items():
                 ctx_lines.append(f"- {key}: {value}")
             parts.append("\n".join(ctx_lines) + "\n")
         
-        # ── Phần 4: Câu hỏi gốc của user ──
-        parts.append(f"## CÂU HỎI CỦA USER\n{raw_input}")
+        # ── Part 4: Original user query ──
+        parts.append(f"## USER QUERY\n{raw_input}")
         
-        # ── Phần 5: Constraint / Guardrail ──
+        # ── Part 5: Constraints / Guardrails ──
         if intent.is_ambiguous:
             parts.append(
-                "\n⚠️ LƯU Ý: Câu hỏi này MƠ HỒ. "
-                "Hãy nêu rõ bạn hiểu câu hỏi như thế nào và hỏi lại nếu cần."
+                "\n⚠️ NOTE: This query is AMBIGUOUS. "
+                "State clearly how you interpreted the query and ask for clarification if needed."
             )
         
         return "\n".join(parts)
 
 
 # ============================================================================
-# ENRICHED AGENT — Tích hợp ContextEnricher vào ReAct Agent
+# ENRICHED AGENT — Integrates ContextEnricher into the ReAct Agent
 # ============================================================================
 
 def create_enriched_system_prompt() -> str:
     """
-    System prompt nâng cao cho agent có context enrichment.
-    So với SYSTEM_PROMPT gốc trong agent_core.py, bổ sung thêm:
-    - Hướng dẫn xử lý câu hỏi mơ hồ
-    - Format trả lời có cấu trúc
-    - Guardrails chống hallucination
+    Advanced system prompt for agents with context enrichment.
+    Compared to the original SYSTEM_PROMPT in agent_core.py, this adds:
+    - Guidance for handling ambiguous queries
+    - Structured response format
+    - Anti-hallucination guardrails
     """
     return """You are Balder, an elite autonomous AI engineering agent with direct access to the host machine.
 You think step-by-step and use tools to accomplish tasks.
@@ -722,7 +722,7 @@ Before responding to ANY user message, you MUST follow this mental protocol:
 ### Step 2: CHECK FOR AMBIGUITY
 - If the message is ambiguous (marked with ⚠️), DO NOT guess or hallucinate.
 - Instead: State your best interpretation → Ask for confirmation
-- Example: "Tôi hiểu bạn muốn [X]. Đúng không? Hay bạn muốn nói [Y]?"
+- Example: "I understand you want [X]. Is that correct? Or did you mean [Y]?"
 
 ### Step 3: USE CONTEXT
 - If [LỊCH SỬ HỘI THOẠI] is provided, use it to understand the current topic.
@@ -795,7 +795,7 @@ Action Input: {"filepath": "config.json"}
 
 Example for just talking:
 Thought: User is asking a general question.
-TRẢ LỜI: <your response>
+ANSWER: <your response>
 """
 
 

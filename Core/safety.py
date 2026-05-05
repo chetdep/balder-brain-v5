@@ -5,7 +5,7 @@ from typing import Dict, Any, Tuple
 
 class SafetyGate:
     """
-    Hệ thống kiểm soát an toàn câu lệnh cho Balder.
+    Safety control system for Balder commands.
     Layer 2: Command Safety Gate
     Layer 3: Tool Wrapper
     """
@@ -54,51 +54,51 @@ class SafetyGate:
 
     @classmethod
     def validate_command(cls, command: str) -> Tuple[bool, str]:
-        """Kiểm tra câu lệnh dựa trên Whitelist (Chỉ cho phép những gì được liệt kê)."""
+        """Check the command against the Whitelist (only allow listed commands)."""
         command_lower = command.lower().strip()
         base_cmd = command_lower.split()[0] if command_lower else ""
         
         # 1. Check Whitelist
         if base_cmd not in cls.WHITELIST_COMMANDS:
-            return False, f"Lỗi Policy: Lệnh '{base_cmd}' không nằm trong danh sách được phép (Whitelist). Hãy dùng các tool chuyên dụng hoặc yêu cầu cấp quyền."
+            return False, f"Policy Error: Command '{base_cmd}' is not in the allowed list (Whitelist). Use specialized tools or request permissions."
 
         # 2. Check for dangerous patterns even in whitelisted commands
         for pattern in cls.DANGEROUS_PATTERNS:
             if re.search(pattern, command_lower):
-                return False, f"Lỗi An Toàn: Phát hiện mẫu nguy hiểm trong lệnh: '{pattern}'."
+                return False, f"Safety Error: Dangerous pattern detected in command: '{pattern}'."
 
         return True, "Safe"
 
     @classmethod
     def filesystem_delete(cls, path: str, recursive: bool = False, reason: str = "") -> str:
         """
-        Layer 3: Tool Wrapper cho hành động xóa.
-        Thực hiện xóa an toàn thông qua PowerShell.
+        Layer 3: Tool Wrapper for deletion actions.
+        Performs secure deletion via PowerShell.
         """
         if not path or path in [".", "/", "C:\\", "C:/"]:
-            return "Lỗi: Không được phép xóa thư mục gốc hoặc đường dẫn trống."
+            return "Error: Cannot delete root directory or empty path."
             
         if not reason:
-            return "Lỗi: Bạn phải cung cấp lý do (reason) cho hành động xóa này."
+            return "Error: You must provide a reason for this deletion action."
             
-        # Chuẩn bị lệnh PowerShell
+        # Prepare PowerShell command
         ps_cmd = f"Remove-Item -Path \"{path}\" -Force"
         if recursive:
             ps_cmd += " -Recurse"
             
         try:
-            # Thực thi lệnh
+            # Execute command
             result = subprocess.run(["powershell", "-Command", ps_cmd], capture_output=True, text=True)
             if result.returncode == 0:
-                return f"Thành công: Đã xóa '{path}'. Lý do: {reason}"
+                return f"Success: Deleted '{path}'. Reason: {reason}"
             else:
-                return f"Lỗi thực thi: {result.stderr}"
+                return f"Execution Error: {result.stderr}"
         except Exception as e:
-            return f"Lỗi hệ thống: {str(e)}"
+            return f"System Error: {str(e)}"
 
 class ExecutionGate:
     """
-    Cửa chặn thực thi dựa trên rủi ro (Risk-based Execution Gate).
+    Risk-based Execution Gate.
     """
     
     POLICY = {
@@ -113,10 +113,10 @@ class ExecutionGate:
 
     @classmethod
     def check_risk(cls, action: str, args: Dict[str, Any]) -> str:
-        """Xác định mức độ rủi ro của một hành động."""
+        """Determine the risk level of an action."""
         risk = cls.POLICY.get(action, "unknown")
         
-        # Đặc biệt cho run_command, kiểm tra sâu hơn
+        # Special handling for run_command, check deeper
         if action == "run_command":
             cmd = args.get("command", "").lower()
             if any(p in cmd for p in ["powershell", "shell", "invoke"]):

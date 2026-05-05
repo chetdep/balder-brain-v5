@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <strong>Author:</strong> Vietnamese AI Researcher (Viber Việt)
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Model-Gemma--4-orange?style=for-the-badge&logo=google" alt="Gemma 4">
   <img src="https://img.shields.io/badge/Status-Research--WIP-blue?style=for-the-badge" alt="Status">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">

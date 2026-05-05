@@ -3,24 +3,27 @@ import time
 import json
 import os
 
+# Default trace storage location
+DEFAULT_TRACE_PATH = os.path.join("docs", "route_brain", "traces_v5.jsonl")
+
 class BalderTelemetry:
     """
-    Hệ thống Telemetry cho Balder Brain V5.
-    Quản lý Trace ID và ghi lại đồ thị thực thi (Execution Graph).
+    Telemetry system for Balder Brain V5.
+    Manages Trace ID and logs the execution graph.
     
-    Performance: Batch flush — chỉ ghi file khi end_trace() được gọi,
-    tránh I/O overhead khi add_node() liên tục trong ReAct loop.
+    Performance: Batch flush — only write to file when end_trace() is called,
+    avoiding I/O overhead during continuous add_node() calls in the ReAct loop.
     """
     
     def __init__(self, log_file="traces.jsonl"):
         self.log_file = log_file
         self.current_trace_id = None
         self.current_turn_data = {}
-        self._dirty = False  # Track nếu có dữ liệu chưa flush
+        self._dirty = False  # Track if there is pending data to flush
 
     def start_trace(self, user_input, intent_analysis=None, model_name="gemma-e4b"):
-        """Khởi tạo một trace mới theo blueprint."""
-        # Flush trace cũ nếu còn pending (phòng trường hợp end_trace bị skip)
+        """Initialize a new trace based on the blueprint."""
+        # Flush old trace if still pending (in case end_trace was skipped)
         if self._dirty:
             self._flush()
         
