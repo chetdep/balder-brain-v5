@@ -22,6 +22,9 @@
 
 While small models often suffer from **Behavioral Hallucination**—misinterpreting user intent or triggering incorrect actions—Balder V5 introduces a multi-layered reasoning architecture that achieves up to **93.8% accuracy** on complex agentic tasks using only a 4B parameter model.
 
+> [!IMPORTANT]
+> **[Read the Full Research Report Here →](RESEARCH_REPORT.md)**
+
 ## 🚀 Key Features
 
 - **🛡️ Behavioral Safety Gates**: Prevents unauthorized or dangerous actions regardless of model output.
