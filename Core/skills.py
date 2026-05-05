@@ -2,17 +2,17 @@
 ==========================================================================
 BALDER HIERARCHICAL SKILLS — Mapping from JAVIS 3-Layer Architecture
 ==========================================================================
-Kiến trúc 3 tầng:
-  1. Intent Class (Lớp Ý định)
-  2. Capability Group (Nhóm Khả năng - Surface Layers)
-  3. Concrete Endpoint (Điểm cuối thực thi)
+3-Layer Architecture:
+  1. Intent Class (Layer 1)
+  2. Capability Group (Layer 2 - Surface Layers)
+  3. Concrete Endpoint (Layer 3 - Execution Endpoint)
 ==========================================================================
 """
 
 from enum import Enum
 from typing import Dict, List, Any
 
-# --- TẦNG 1: INTENT CLASS ---
+# --- LAYER 1: INTENT CLASS ---
 class IntentClass(Enum):
     TALK = "TALK_ABOUT_DOMAIN"
     ACTION = "PERFORM_ACTION"
@@ -21,7 +21,7 @@ class IntentClass(Enum):
     DEBUG = "DEBUG_FAILURE"
     RESEARCH = "KNOWLEDGE_LOOKUP"
 
-# --- TẦNG 2: CAPABILITY GROUP (Surfaces & Layers) ---
+# --- LAYER 2: CAPABILITY GROUP (Surfaces & Layers) ---
 class CapabilityGroup(Enum):
     # Office Layers
     OFFICE_EMAIL = "office.email"
@@ -45,7 +45,7 @@ class CapabilityGroup(Enum):
     # General Chat
     CHAT_GENERAL = "chat.general"
 
-# --- TẦNG 3: CONCRETE ENDPOINTS (Placeholders) ---
+# --- LAYER 3: CONCRETE ENDPOINTS (Placeholders) ---
 SKILL_PLACEHOLDER = "ABC...XYZ"
 
 BALDER_SKILLS_MAPPING = {
@@ -79,7 +79,7 @@ BALDER_SKILLS_MAPPING = {
 
 def get_hierarchical_skill(capability: str, endpoint: str = None) -> str:
     """
-    Truy xuất skill dựa trên cấu trúc phân tầng.
+    Retrieve skill based on the hierarchical structure.
     """
     try:
         cap_enum = CapabilityGroup(capability)

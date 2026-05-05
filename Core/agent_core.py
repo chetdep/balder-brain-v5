@@ -10,7 +10,7 @@ from Core.telemetry import BalderTelemetry
 
 load_dotenv()
 
-# Địa chỉ mặc định cho Ollama hoặc Llama.cpp Local Server
+# Default address for Ollama or Llama.cpp Local Server
 API_BASE = os.getenv("LLM_API_BASE", "http://localhost:11434/v1")
 API_KEY = os.getenv("LLM_API_KEY", "ollama")
 MODEL_NAME = os.getenv("LLM_MODEL_V5", "gemma4:e4b")
@@ -22,9 +22,9 @@ client = AsyncOpenAI(
 
 # ============================================================================
 # TEXT-BASED REACT PROMPT
-# Thay vì dùng OpenAI function calling (JSON schema), ta nhúng mô tả tool
-# trực tiếp vào system prompt. Model chỉ cần sinh text theo format đơn giản.
-# Điều này hoạt động tốt hơn nhiều với model quantize thấp (IQ3_XS).
+# Instead of using OpenAI function calling (JSON schema), we embed tool 
+# descriptions directly into the system prompt. The model generates simple text.
+# This works significantly better for low-quantized models (IQ3_XS).
 # ============================================================================
 
 SYSTEM_PROMPT = """You are Balder, an elite autonomous AI engineering agent.
@@ -40,10 +40,10 @@ Action Input: {"filepath": "config.json"}
 
 Example for just talking:
 Thought: User is asking a general question.
-TRẢ LỜI: <your response>
+ANSWER: <your response>
 
 ## ONE-SHOT EXAMPLE (PERFORM ACTION)
-User: "đọc file config.json"
+User: "read config.json"
 Thought: User wants to read a configuration file. I should check if it exists.
 ```json
 {
@@ -90,18 +90,18 @@ After seeing the Observation, continue reasoning with another Thought, or give y
 When you have gathered enough information and are ready to give a final answer, just respond normally in plain text. Do NOT include Action or Action Input in your final answer.
 """
 
-# Giới hạn tối đa số bước ReAct để tránh vòng lặp vô hạn
+# Max ReAct steps to avoid infinite loops
 MAX_REACT_STEPS = 15
 
-# Giới hạn kích thước observation đưa lại vào context (tránh tràn context window)
+# Max observation size to put back into context (avoid context window overflow)
 MAX_OBSERVATION_CHARS = 4000
 
 
 def sanitize_text(text: str) -> str:
     """
-    Loai bo surrogate characters khoi text.
-    Ollama doi khi tra ve text chua ky tu UTF-16 surrogate bi loi,
-    khien openai client crash khi serialize JSON o lan goi tiep theo.
+    Remove surrogate characters from text.
+    Ollama sometimes returns text containing invalid UTF-16 surrogate characters,
+    which causes the openai client to crash during JSON serialization.
     """
     if not text:
         return text
@@ -110,20 +110,20 @@ def sanitize_text(text: str) -> str:
 
 def parse_action(text: str):
     """
-    Parse Action và Action Input từ response text của LLM.
+    Parse Action and Action Input from the LLM response text.
     
     Returns:
-        (action_name, action_args) - hoặc (None, None) nếu không tìm thấy Action.
-        action_args sẽ là None nếu parse JSON thất bại.
+        (action_name, action_args) - or (None, None) if no Action is found.
+        action_args will be None if JSON parsing fails.
     """
-    # Tìm dòng Action:
+    # Look for Action: line
     action_match = re.search(r'Action:\s*[`]?(\w+)[`]?', text)
     if not action_match:
         return None, None
 
     action_name = action_match.group(1).strip()
 
-    # Tìm Action Input: sau dòng Action
+    # Find Action Input: after the Action line
     remaining_text = text[action_match.end():]
     input_match = re.search(r'Action\s*Input:\s*', remaining_text, re.IGNORECASE)
     if not input_match:
@@ -131,10 +131,10 @@ def parse_action(text: str):
 
     raw_input = remaining_text[input_match.end():].strip()
 
-    # Loại bỏ markdown code fences nếu model thêm vào
+    # Remove markdown code fences if added by the model
     raw_input = re.sub(r'^```(?:json)?\s*\n?', '', raw_input)
 
-    # Trích xuất JSON bằng cách đếm ngoặc nhọn (xử lý JSON nhiều dòng)
+    # Extract JSON by counting braces (handles multi-line JSON)
     try:
         json_start = raw_input.index('{')
         brace_count = 0
@@ -166,7 +166,7 @@ class ReActAgent:
         self.telemetry = BalderTelemetry()
 
     def add_user_message(self, message: str, extra_context: str = ""):
-        """Thêm tin nhắn người dùng và nén lịch sử nếu quá dài."""
+        """Add user message and truncate history if too long."""
         # Truncate history to keep last 10 messages (plus system prompt)
         if len(self.messages) > 11:
             self.messages = [self.messages[0]] + self.messages[-10:]
@@ -178,11 +178,11 @@ class ReActAgent:
             self.telemetry.start_trace(message, intent, model_name=MODEL_NAME)
             if self.verbose:
                  from rich.console import Console
-                 c = Console()
-                 c.print(f"  [dim][Context Enricher] Phát hiện ý định: {intent.primary_intent.value} (Confidence: {intent.confidence:.2f})[/]")
-                 if intent.is_ambiguous:
-                     c.print(f"  [yellow][Context Enricher] ⚠️ Câu hỏi mơ hồ: {intent.ambiguity_reasons}[/]")
-                 c.print(f"\n[dim cyan]=== ENRICHED PROMPT ===\n{enriched_prompt}\n========================[/]\n")
+             c = Console()
+             c.print(f"  [dim][Context Enricher] Intent detected: {intent.primary_intent.value} (Confidence: {intent.confidence:.2f})[/]")
+             if intent.is_ambiguous:
+                 c.print(f"  [yellow][Context Enricher] ⚠️ Ambiguous query: {intent.ambiguity_reasons}[/]")
+             c.print(f"\n[dim cyan]=== ENRICHED PROMPT ===\n{enriched_prompt}\n========================[/]\n")
         else:
             self.messages.append({"role": "user", "content": message})
             
@@ -190,27 +190,27 @@ class ReActAgent:
 
     async def run_step(self) -> dict:
         """
-        Thực thi một bước giao tiếp với LLM (Text-based ReAct).
+        Execute one interaction step with the LLM (Text-based ReAct).
         
         Returns:
-            dict với type:
-            - "tool_call": LLM muốn gọi tool (có thought, action, action_input, observation)
-            - "text": Phản hồi cuối cùng bằng text thuần
-            - "error": Có lỗi xảy ra
-            - "cancelled": Bị người dùng ngắt
-            - "max_steps": Đã vượt quá số bước tối đa
+            dict with type:
+            - "tool_call": LLM wants to call a tool (contains thought, action, action_input, observation)
+            - "text": Final plain text response
+            - "error": Error occurred
+            - "cancelled": Interrupted by user
+            - "max_steps": Exceeded maximum steps
         """
-        # Kiểm tra giới hạn bước
+        # Check step limit
         self.step_count += 1
         if self.step_count > MAX_REACT_STEPS:
             return {
                 "type": "max_steps",
-                "content": f"Đã đạt giới hạn {MAX_REACT_STEPS} bước. Dừng lại để tránh vòng lặp vô hạn."
+                "content": f"Reached {MAX_REACT_STEPS} step limit. Stopping to avoid infinite loop."
             }
 
         try:
-            # Sanitize toàn bộ message history trước khi gửi
-            # (phòng trường hợp surrogate chars tích lũy từ các bước trước)
+            # Sanitize entire message history before sending
+            # (prevents surrogate chars from accumulating across steps)
             clean_messages = []
             for msg in self.messages:
                 clean_msg = dict(msg)
@@ -218,7 +218,7 @@ class ReActAgent:
                     clean_msg["content"] = sanitize_text(clean_msg["content"])
                 clean_messages.append(clean_msg)
 
-            # Gọi LLM KHÔNG có tham số tools — chỉ sinh text thuần
+            # Call LLM WITHOUT tools parameter — pure text generation
             response = await client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=clean_messages,
@@ -228,15 +228,15 @@ class ReActAgent:
             message = response.choices[0].message
             content = sanitize_text(message.content or "")
 
-            # Lưu phản hồi assistant vào lịch sử
+            # Save assistant response to history
             self.messages.append({"role": "assistant", "content": content})
             
             # Record Thought in Telemetry
             self.telemetry.add_node("thought", content)
             
             # 🌟 STEP 2: CODE SERIALIZER (Auto-generate TurnRoutePlan)
-            # Thay vì bắt LLM sinh JSON dễ lỗi ngoặc, ta tự generate JSON dựa vào Intent Tầng 1
-            # và kết hợp với Quyết định Action của LLM.
+            # Instead of forcing the LLM to generate error-prone JSON, we auto-generate
+            # the JSON based on Layer 1 Intent and the LLM's Action decision.
             action_name, action_args = parse_action(content)
             
             intent_obj = getattr(self, "current_intent", None)
@@ -256,9 +256,9 @@ class ReActAgent:
             self.telemetry.record_plan(plan_json)
 
             if action_name and action_args is not None:
-                # ---- LLM muốn gọi tool ----
+                # ---- LLM wants to call a tool ----
                 
-                # Trích xuất Thought (phần trước Action:)
+                # Extract Thought (part before Action:)
                 thought = ""
                 thought_match = re.search(
                     r'Thought:\s*(.*?)(?=\n\s*Action:)', content, re.DOTALL
@@ -279,7 +279,7 @@ class ReActAgent:
                 # Record Action in Telemetry
                 self.telemetry.add_node("action", action_name, {"input": action_args})
                 
-                # Cắt bớt observation nếu quá dài (tránh tràn context)
+                # Truncate observation if too long (avoid context overflow)
                 result_str = sanitize_text(str(result))
                 if len(result_str) > MAX_OBSERVATION_CHARS:
                     result_str = (
@@ -287,7 +287,7 @@ class ReActAgent:
                         + f"\n\n... [TRUNCATED — showing first {MAX_OBSERVATION_CHARS} chars of {len(result_str)} total]"
                     )
 
-                # Thêm observation vào lịch sử để LLM thấy kết quả
+                # Add observation to history for LLM awareness
                 self.messages.append({
                     "role": "user",
                     "content": f"Observation: {result_str}"
@@ -305,7 +305,7 @@ class ReActAgent:
                 }
 
             elif action_name and action_args is None:
-                # ---- LLM gọi tool nhưng JSON bị lỗi ----
+                # ---- LLM called a tool but JSON is malformed ----
                 error_msg = (
                     f"Observation: Error — Could not parse Action Input JSON for tool '{action_name}'. "
                     f"Please provide valid JSON. Example: Action Input: {{\"key\": \"value\"}}"
@@ -319,7 +319,7 @@ class ReActAgent:
                 }
 
             else:
-                # ---- Không có Action → đây là câu trả lời cuối cùng ----
+                # ---- No Action → this is the final answer ----
                 if self.use_enricher:
                     self.enricher.record_assistant_response(content)
                 self.telemetry.end_trace(content)
